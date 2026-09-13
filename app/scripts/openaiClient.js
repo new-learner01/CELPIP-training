@@ -1,9 +1,19 @@
 /**
  * Session-based Gemini & Browser-Native Client
- * All exports configured for Listening, Reading, Writing, and Speaking sections.
+ * Contains all exports required across main.js and all test sections.
  */
 
-// 1. Session-Only API Key Management
+// 1. Session Key & Model Management
+let currentModel = 'gemini-1.5-flash';
+
+export function getModel() {
+  return currentModel;
+}
+
+export function setModel(modelName) {
+  if (modelName) currentModel = modelName;
+}
+
 export function getApiKey() {
   let key = sessionStorage.getItem('gemini_session_key');
   if (!key) {
@@ -21,8 +31,12 @@ export function setApiKey(key) {
   }
 }
 
-export function clearApiKey() {
+export function removeApiKey() {
   sessionStorage.removeItem('gemini_session_key');
+}
+
+export function clearApiKey() {
+  removeApiKey();
 }
 
 export function hasApiKey() {
@@ -30,6 +44,7 @@ export function hasApiKey() {
   return Boolean(key && key.trim().length > 0);
 }
 
+// Utility to clean markdown fences from LLM JSON responses
 function cleanJSON(rawText) {
   let text = rawText.trim();
   if (text.startsWith('```json')) {
@@ -62,7 +77,8 @@ export async function chatCompletion(messages, options = {}) {
     throw new Error('Gemini API key is missing. Please reload and enter your key.');
   }
 
-  const url = `[https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$](https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$){apiKey}`;
+  const model = currentModel || 'gemini-1.5-flash';
+  const url = `[https://generativelanguage.googleapis.com/v1beta/models/$](https://generativelanguage.googleapis.com/v1beta/models/$){model}:generateContent?key=${apiKey}`;
 
   let systemText = '';
   const contents = [];
@@ -113,7 +129,7 @@ export async function transcribeAudio(audioBlob) {
   return "Candidate speaking response recorded. Ready for rubric evaluation.";
 }
 
-// 5. Speech Generation (listeningSection imports: textToSpeech and generateSpeech)
+// 5. Speech Generation (listeningSection imports)
 export async function textToSpeech(text) {
   playListeningAudio(text);
   return "";

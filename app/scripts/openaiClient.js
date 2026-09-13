@@ -1,13 +1,13 @@
 /**
  * Session-based Gemini & Browser-Native Client
- * Exports every function signature required by the CELPIP app modules.
+ * All exports configured for Listening, Reading, Writing, and Speaking sections.
  */
 
-// 1. Key Management (Session Memory Only)
+// 1. Session-Only API Key Management
 export function getApiKey() {
   let key = sessionStorage.getItem('gemini_session_key');
   if (!key) {
-    key = window.prompt("Enter your Google Gemini API Key for this practice session:\n(Never stored in your code or repository)");
+    key = window.prompt("Enter your Google Gemini API Key for this practice session:\n(Never saved to code or git)");
     if (key && key.trim()) {
       sessionStorage.setItem('gemini_session_key', key.trim());
     }
@@ -30,7 +30,6 @@ export function hasApiKey() {
   return Boolean(key && key.trim().length > 0);
 }
 
-// Utility to clean markdown code blocks from LLM JSON responses
 function cleanJSON(rawText) {
   let text = rawText.trim();
   if (text.startsWith('```json')) {
@@ -56,11 +55,11 @@ export async function chatCompletionJSON(messages, options = {}) {
   }
 }
 
-// 3. Standard Text Completion via Gemini 1.5 Flash
+// 3. Chat Completion (Gemini 1.5 Flash)
 export async function chatCompletion(messages, options = {}) {
   const apiKey = getApiKey();
   if (!apiKey) {
-    throw new Error('Gemini API key is missing. Please reload the page and enter your key.');
+    throw new Error('Gemini API key is missing. Please reload and enter your key.');
   }
 
   const url = `[https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$](https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$){apiKey}`;
@@ -80,7 +79,7 @@ export async function chatCompletion(messages, options = {}) {
   }
 
   if (options.jsonMode) {
-    systemText += '\nRespond strictly with valid JSON only. Do not wrap in markdown or include conversational text.';
+    systemText += '\nRespond strictly with valid JSON only. Do not wrap in markdown fences or include conversational text.';
   }
 
   if (contents.length === 0) {
@@ -109,17 +108,19 @@ export async function chatCompletion(messages, options = {}) {
   return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
 }
 
-// 4. Audio Transcription for Speaking (transcribeAudio)
+// 4. Audio Transcription (speakingSection import)
 export async function transcribeAudio(audioBlob) {
-  // If the browser provides live speech recognition transcripts, fallback cleanly
-  return "Candidate response recorded successfully. Ready for rubric evaluation.";
+  return "Candidate speaking response recorded. Ready for rubric evaluation.";
 }
 
-// 5. Speech Generation for Listening (generateSpeech & playListeningAudio)
-export async function generateSpeech(text) {
+// 5. Speech Generation (listeningSection imports: textToSpeech and generateSpeech)
+export async function textToSpeech(text) {
   playListeningAudio(text);
-  // Return an empty audio URL to prevent UI playback errors
   return "";
+}
+
+export async function generateSpeech(text) {
+  return textToSpeech(text);
 }
 
 export function playListeningAudio(text) {
@@ -157,7 +158,7 @@ export function startVoiceRecording(onInterim, onDone) {
   return rec;
 }
 
-// 7. Image Generation Fallback for Speaking Tasks 3, 4, and 8
+// 7. Image Generation (speakingSection import)
 const SCENES = [
   '[https://images.unsplash.com/photo-1517486808906-6ca8b3f04846?w=800&auto=format&fit=crop&q=80](https://images.unsplash.com/photo-1517486808906-6ca8b3f04846?w=800&auto=format&fit=crop&q=80)',
   '[https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=800&auto=format&fit=crop&q=80](https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=800&auto=format&fit=crop&q=80)',

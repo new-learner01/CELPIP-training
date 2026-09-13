@@ -1,197 +1,137 @@
-/**
- * OpenAI API Client
- * Handles API key management, model selection, and all OpenAI API calls.
- */
-
-const STORAGE_KEY_API = 'celpip_openai_api_key';
-const STORAGE_KEY_MODEL = 'celpip_openai_model';
-const DEFAULT_MODEL = 'gpt-4o-mini';
-
-/**
- * Get the active API key (localStorage takes precedence over .env).
- */
+// Manage key in temporary session storage only
 export function getApiKey() {
-    const stored = localStorage.getItem(STORAGE_KEY_API);
-    if (stored) return stored;
-    // Vite exposes VITE_ env vars to the client
-    const envKey = import.meta.env?.VITE_OPENAI_API_KEY;
-    if (envKey && envKey !== 'sk-your-key-here') return envKey;
-    return null;
+  let key = sessionStorage.getItem('gemini_session_key');
+  if (!key) {
+    key = window.prompt("Enter your Google Gemini API key to continue:");
+    if (key && key.trim()) {
+      sessionStorage.setItem('gemini_session_key', key.trim());
+    }
+  }
+  return key ? key.trim() : '';
 }
 
-/**
- * Save the API key to localStorage.
- */
 export function setApiKey(key) {
-    if (key) {
-        localStorage.setItem(STORAGE_KEY_API, key.trim());
+  if (key) {
+    sessionStorage.setItem('gemini_session_key', key.trim());
+  }
+}
+
+export function clearApiKey() {
+  sessionStorage.removeItem('gemini_session_key');
+}
+
+/**
+ * 1. AI Text Generation & Evaluation (Google Gemini Free Tier)
+ */
+export async function generateChatCompletion(messages, options = {}) {
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    throw new Error('API key is required. Please refresh and enter your Gemini API key.');
+  }
+
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+
+  // Extract system message and user/assistant messages
+  let systemText = '';
+  const contents = [];
+
+  for (const msg of messages) {
+    if (msg.role === 'system') {
+      systemText += msg.content + '\n';
     } else {
-        localStorage.removeItem(STORAGE_KEY_API);
+      contents.push({
+        role: msg.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: msg.content }]
+      });
     }
+  }
+
+  // Gemini requires at least one user content item
+  if (contents.length === 0) {
+    contents.push({ role: 'user', parts: [{ text: 'Start practice task' }] });
+  }
+
+  const requestBody = { contents };
+  if (systemText.trim()) {
+    requestBody.systemInstruction = {
+      parts: [{ text: systemText.trim() }]
+    };
+  }
+
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(requestBody)
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error?.message || `Gemini API request failed with status ${res.status}`);
+  }
+
+  const data = await res.json();
+  const replyText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  return replyText;
 }
 
 /**
- * Remove the API key from localStorage.
+ * 2. Listening Section Audio (Native Web Speech Synthesis)
  */
-export function removeApiKey() {
-    localStorage.removeItem(STORAGE_KEY_API);
+export function playListeningAudio(text) {
+  if (!('speechSynthesis' in window)) {
+    console.warn('Speech synthesis is not supported on this browser.');
+    return;
+  }
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.rate = 0.93;
+  utterance.lang = 'en-CA'; // Falls back to en-US if Canadian voice isn't installed
+  window.speechSynthesis.speak(utterance);
 }
 
 /**
- * Get the selected chat model.
+ * 3. Speaking Section Audio Recording & Transcription (Native Web Speech API)
  */
-export function getModel() {
-    return localStorage.getItem(STORAGE_KEY_MODEL) || DEFAULT_MODEL;
-}
+export function startVoiceRecording(onInterimResult, onFinalResult) {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    alert('Browser voice recognition requires Google Chrome, Microsoft Edge, or Safari.');
+    return null;
+  }
 
-/**
- * Set the chat model (gpt-4o-mini or gpt-4o).
- */
-export function setModel(model) {
-    localStorage.setItem(STORAGE_KEY_MODEL, model);
-}
+  const recognition = new SpeechRecognition();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.lang = 'en-US';
 
-/**
- * Check whether an API key is configured.
- */
-export function hasApiKey() {
-    return !!getApiKey();
-}
-
-/**
- * Send a chat completion request to the OpenAI API.
- */
-export async function chatCompletion(messages, options = {}) {
-    const apiKey = getApiKey();
-    if (!apiKey) throw new Error('OpenAI API key is not configured.');
-
-    const model = options.model || getModel();
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-            model,
-            messages,
-            temperature: options.temperature ?? 0.7,
-            max_tokens: options.max_tokens ?? 2048,
-            ...(options.response_format ? { response_format: options.response_format } : {}),
-        }),
-    });
-
-    if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
-        throw new Error(err.error?.message || `OpenAI API error: ${response.status}`);
+  recognition.onresult = (event) => {
+    let transcript = '';
+    for (let i = 0; i < event.results.length; ++i) {
+      transcript += event.results[i][0].transcript;
     }
+    if (onInterimResult) onInterimResult(transcript);
+  };
 
-    const data = await response.json();
-    return data.choices[0].message.content;
+  if (onFinalResult) {
+    recognition.onend = () => onFinalResult();
+  }
+
+  recognition.start();
+  return recognition;
 }
 
 /**
- * Send a chat completion request and parse JSON response.
+ * 4. Image Fallback for Speaking Tasks 3, 4, and 8
+ * Returns high-resolution public images rather than generating via paid DALL-E
  */
-export async function chatCompletionJSON(messages, options = {}) {
-    const raw = await chatCompletion(messages, {
-        ...options,
-        response_format: { type: 'json_object' },
-    });
-    return JSON.parse(raw);
-}
+const SCENE_COLLECTION = [
+  'https://images.unsplash.com/photo-1517486808906-6ca8b3f04846?w=800&auto=format&fit=crop&q=80',
+  'https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=800&auto=format&fit=crop&q=80',
+  'https://images.unsplash.com/photo-1519389950473-47ba0277781c?w=800&auto=format&fit=crop&q=80',
+  'https://images.unsplash.com/photo-1498050108023-c5249f4df085?w=800&auto=format&fit=crop&q=80'
+];
 
-/**
- * Generate an image using DALL-E 3.
- */
-export async function generateImage(prompt, options = {}) {
-    const apiKey = getApiKey();
-    if (!apiKey) throw new Error('OpenAI API key is not configured.');
-
-    const response = await fetch('https://api.openai.com/v1/images/generations', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-            model: 'dall-e-3',
-            prompt,
-            n: 1,
-            size: options.size || '1024x1024',
-            quality: options.quality || 'standard',
-        }),
-    });
-
-    if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
-        throw new Error(err.error?.message || `DALL-E API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    return data.data[0].url;
-}
-
-/**
- * Transcribe audio using Whisper.
- */
-export async function transcribeAudio(audioBlob) {
-    const apiKey = getApiKey();
-    if (!apiKey) throw new Error('OpenAI API key is not configured.');
-
-    // Determine file extension from blob MIME type (Safari uses mp4, Chrome uses webm)
-    const ext = audioBlob.type.includes('mp4') ? 'mp4'
-      : audioBlob.type.includes('aac') ? 'aac'
-      : audioBlob.type.includes('wav') ? 'wav'
-      : 'webm';
-    const formData = new FormData();
-    formData.append('file', audioBlob, 'recording.' + ext);
-    formData.append('model', 'whisper-1');
-    formData.append('language', 'en');
-
-    const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-        method: 'POST',
-        headers: {
-            'Authorization': `Bearer ${apiKey}`,
-        },
-        body: formData,
-    });
-
-    if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
-        throw new Error(err.error?.message || `Whisper API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    return data.text;
-}
-
-/**
- * Generate speech audio using TTS.
- */
-export async function textToSpeech(text, options = {}) {
-    const apiKey = getApiKey();
-    if (!apiKey) throw new Error('OpenAI API key is not configured.');
-
-    const response = await fetch('https://api.openai.com/v1/audio/speech', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-            model: 'tts-1',
-            input: text,
-            voice: options.voice || 'alloy',
-            response_format: 'mp3',
-        }),
-    });
-
-    if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
-        throw new Error(err.error?.message || `TTS API error: ${response.status}`);
-    }
-
-    const blob = await response.blob();
-    return URL.createObjectURL(blob);
+export async function generateSceneImage() {
+  const randomIndex = Math.floor(Math.random() * SCENE_COLLECTION.length);
+  return SCENE_COLLECTION[randomIndex];
 }

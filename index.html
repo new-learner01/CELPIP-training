@@ -13,5 +13,18 @@
 <body>
   <div id="app"></div>
   <script type="module" src="/app/scripts/main.js"></script>
+  <script>
+    window.addEventListener('DOMContentLoaded', () => {
+      const existingKey = sessionStorage.getItem('gemini_session_key');
+      if (!existingKey) {
+        setTimeout(() => {
+          const key = prompt("Enter your Google Gemini API Key for this practice session:\n(Never saved in code or sent anywhere else)");
+          if (key && key.trim()) {
+            sessionStorage.setItem('gemini_session_key', key.trim());
+          }
+        }, 500);
+      }
+    });
+  </script>
 </body>
 </html>
